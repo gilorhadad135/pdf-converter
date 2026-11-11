@@ -2,7 +2,8 @@ FROM node:22-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
       libreoffice-writer libreoffice-impress libreoffice-calc \
       fonts-liberation fonts-dejavu fonts-noto-core fonts-noto-ui-core fonts-noto-extra fonts-freefont-ttf \
-      fonts-culmus fonts-opensymbol \
+      fonts-opensymbol \
+    && (apt-get install -y --no-install-recommends culmus || true) \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json ./

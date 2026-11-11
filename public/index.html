@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ממיר ל-PDF</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ממיר PDF">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#1d4ed8">
+<style>
+  :root { --blue:#1d4ed8; --bg:#f3f5f9; --card:#fff; --text:#16202e; --muted:#667085; --ok:#15803d; --err:#b42318; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e131b; --card:#18202c; --text:#eef2f7; --muted:#9aa6b8; } }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--text);
+    font-family:-apple-system,"Heebo","Arial Hebrew",Arial,sans-serif;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    display:flex; align-items:center; justify-content:center; }
+  main { width:min(560px,92vw); padding:24px 0; }
+  h1 { font-size:26px; margin:0 0 6px; }
+  p.sub { margin:0 0 22px; color:var(--muted); }
+  .card { background:var(--card); border-radius:20px; padding:22px; box-shadow:0 2px 14px rgba(0,0,0,.07); }
+  .drop { border:2px dashed #9db4f5; border-radius:16px; padding:34px 14px; text-align:center; cursor:pointer; }
+  .drop.over { background:rgba(29,78,216,.08); }
+  .drop b { display:block; font-size:19px; margin-bottom:4px; }
+  .drop span { color:var(--muted); font-size:14px; }
+  button, .btn { appearance:none; border:0; border-radius:14px; background:var(--blue); color:#fff; font-size:18px; font-weight:600;
+    padding:15px 18px; width:100%; margin-top:12px; cursor:pointer; text-align:center; text-decoration:none; display:block; font-family:inherit; }
+  button.sec, .btn.sec { background:transparent; color:var(--blue); border:2px solid var(--blue); }
+  .status { margin-top:16px; text-align:center; min-height:24px; color:var(--muted); }
+  .status.err { color:var(--err); } .status.ok { color:var(--ok); font-weight:600; }
+  .spin { display:inline-block; width:18px; height:18px; border:3px solid #cbd5e1; border-top-color:var(--blue); border-radius:50%;
+    animation:r 0.8s linear infinite; vertical-align:middle; margin-inline-end:8px; }
+  @keyframes r { to { transform:rotate(360deg); } }
+  .hidden { display:none !important; }
+  details { margin-top:18px; color:var(--muted); font-size:14px; } input[type=password],input[type=text]{ width:100%; padding:10px; border-radius:10px; border:1px solid #cbd5e1; font-size:16px; margin-top:8px; }
+  .fname { text-align:center; font-weight:600; margin-top:14px; word-break:break-word; }
+</style>
+</head>
+<body>
+<main>
+  <h1>ממיר ל-PDF</h1>
+  <p class="sub">בחר קובץ Word או PowerPoint והוא יומר אוטומטית.</p>
+  <div class="card">
+    <label class="drop" id="drop" for="file">
+      <b>לחץ לבחירת קובץ</b>
+      <span>docx · pptx · doc · ppt (אפשר גם לגרור לכאן)</span>
+    </label>
+    <input id="file" type="file" class="hidden"
+      accept=".docx,.pptx,.doc,.ppt,.odt,.odp,.rtf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/msword,application/vnd.ms-powerpoint">
+    <div class="fname hidden" id="fname"></div>
+    <div class="status" id="status"></div>
+    <div id="result" class="hidden">
+      <a class="btn" id="dl">הורד PDF</a>
+      <button class="sec" id="share">שמור ל"קבצים" / שתף</button>
+      <button class="sec" id="again">המרה של קובץ נוסף</button>
+    </div>
+  </div>
+  <details id="settings">
+    <summary>הגדרות</summary>
+    <label>קוד גישה לשרת (אם הוגדר)<input type="password" id="token" autocomplete="off"></label>
+  </details>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const fileInput = $("file"), statusEl = $("status"), result = $("result");
+let pdfBlob = null, pdfName = "document.pdf", objUrl = null;
+
+const tokenEl = $("token");
+tokenEl.value = localStorage.getItem("token") || "";
+tokenEl.addEventListener("change", () => localStorage.setItem("token", tokenEl.value.trim()));
+fetch("config").then(r => r.json()).then(c => { if (c.tokenRequired && !tokenEl.value) $("settings").open = true; }).catch(()=>{});
+
+function setStatus(msg, cls = "", spin = false) {
+  statusEl.className = "status " + cls;
+  statusEl.innerHTML = spin ? '<span class="spin"></span>' : "";
+  statusEl.append(msg);
+}
+
+async function handle(file) {
+  if (!file) return;
+  result.classList.add("hidden");
+  $("fname").textContent = file.name; $("fname").classList.remove("hidden");
+  setStatus("ממיר ל-PDF… (קובץ גדול יכול לקחת דקה)", "", true);
+  const fd = new FormData(); fd.append("file", file, file.name);
+  try {
+    const res = await fetch("convert", { method: "POST", body: fd, headers: { "x-token": localStorage.getItem("token") || "" } });
+    if (res.status === 401) { $("settings").open = true; throw new Error("נדרש קוד גישה (בהגדרות)"); }
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "ההמרה נכשלה");
+    pdfBlob = await res.blob();
+    pdfName = file.name.replace(/\.[^.]+$/, "") + ".pdf";
+    if (objUrl) URL.revokeObjectURL(objUrl);
+    objUrl = URL.createObjectURL(pdfBlob);
+    $("dl").href = objUrl; $("dl").download = pdfName;
+    setStatus("הקובץ מוכן ✓", "ok");
+    result.classList.remove("hidden");
+    $("share").classList.toggle("hidden", !navigator.canShare);
+  } catch (e) {
+    setStatus(e.message === "Load failed" ? "אין חיבור לשרת" : e.message, "err");
+  }
+}
+
+fileInput.addEventListener("change", () => { handle(fileInput.files[0]); fileInput.value = ""; });
+$("again").onclick = () => { result.classList.add("hidden"); $("fname").classList.add("hidden"); setStatus(""); fileInput.click(); };
+$("share").onclick = async () => {
+  const f = new File([pdfBlob], pdfName, { type: "application/pdf" });
+  try { if (navigator.canShare({ files: [f] })) await navigator.share({ files: [f] }); } catch (_) {}
+};
+const drop = $("drop");
+["dragover","dragenter"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => handle(e.dataTransfer.files[0]));
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>
